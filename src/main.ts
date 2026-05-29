@@ -1,114 +1,188 @@
-import {
-	Editor,
-	MarkdownView,
-	MarkdownFileInfo,
-	Modal,
-	Notice,
-	Plugin,
-} from 'obsidian';
-import {
-	DEFAULT_SETTINGS,
-	MyPluginSettings,
-	SampleSettingTab,
-} from './settings';
+import { ItemView, Notice, Plugin, WorkspaceLeaf } from "obsidian";
 
-// Remember to rename these classes and interfaces!
+const VIEW_TYPE_TIMER_BAR = "timer-bar-view";
 
-export default class MyPlugin extends Plugin {
-	settings!: MyPluginSettings;
-
+export default class TimerBarPlugin extends Plugin {
 	async onload() {
-		await this.loadSettings();
+		console.log("Timer Bar plugin loaded");
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (_evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+		this.registerView(
+			VIEW_TYPE_TIMER_BAR,
+			(leaf) => new TimerBarView(leaf)
+		);
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
+			id: "open-timer-bar",
+			name: "Open timer bar",
 			callback: () => {
-				new SampleModal(this.app).open();
-			},
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (
-				editor: Editor,
-				_ctx: MarkdownView | MarkdownFileInfo,
-			) => {
-				editor.replaceSelection('Sample editor command');
-			},
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView =
-					this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
+				this.activateView();
 			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(activeDocument, 'click', (_evt: MouseEvent) => {
-			new Notice('Click');
+		this.addRibbonIcon("timer", "Open timer bar", () => {
+			this.activateView();
 		});
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(
-			window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000),
-		);
+		await this.activateView();
 	}
 
-	onunload() {}
-
-	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MyPluginSettings>,
-		);
+	onunload() {
+		console.log("Timer Bar plugin unloaded");
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
+	async activateView() {
+		const existingLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_TIMER_BAR);
+
+		const existingLeaf = existingLeaves[0];
+
+		if (existingLeaf) {
+			this.app.workspace.revealLeaf(existingLeaf);
+			return;
+		}
+		
+		const leaf = this.app.workspace.getRightLeaf(false);
+
+		if (!leaf) {
+			new Notice("Could not open timer bar.");
+			return;
+		}
+
+		await leaf.setViewState({
+			type: VIEW_TYPE_TIMER_BAR,
+			active: true,
+		});
+
+		this.app.workspace.revealLeaf(leaf);
 	}
 }
 
-class SampleModal extends Modal {
-	onOpen() {
-		const { contentEl } = this;
-		contentEl.setText('Woah!');
+class TimerBarView extends ItemView {
+	private statusText!: HTMLElement;
+	private timerInterval: number | null = null;
+	private seconds = 0;
+	private isPaused = false;
+
+	constructor(leaf: WorkspaceLeaf) {
+		super(leaf);
 	}
 
-	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
+	getViewType() {
+		return VIEW_TYPE_TIMER_BAR;
+	}
+
+	getDisplayText() {
+		return "Timer Bar";
+	}
+
+	getIcon() {
+		return "timer";
+	}
+
+	async onOpen() {
+		const container = this.contentEl;
+		container.empty();
+
+		const wrapper = container.createDiv({
+			cls: "timer-bar-wrapper",
+		});
+
+		wrapper.createEl("h3", {
+			text: "Timer",
+		});
+
+		this.statusText = wrapper.createEl("div", {
+			cls: "timer-bar-status",
+			text: "00:00",
+		});
+
+		const buttonContainer = wrapper.createDiv({
+			cls: "timer-bar-buttons",
+		});
+
+		const startButton = buttonContainer.createEl("button", {
+			text: "Start",
+			cls: "timer-bar-button",
+		});
+
+		const pauseButton = buttonContainer.createEl("button", {
+			text: "Pause",
+			cls: "timer-bar-button",
+		});
+
+		const stopButton = buttonContainer.createEl("button", {
+			text: "Stop",
+			cls: "timer-bar-button",
+		});
+
+		startButton.addEventListener("click", () => {
+			this.startTimer();
+		});
+
+		pauseButton.addEventListener("click", () => {
+			this.pauseTimer();
+		});
+
+		stopButton.addEventListener("click", () => {
+			this.stopTimer();
+		});
+	}
+
+	async onClose() {
+		this.clearTimer();
+	}
+
+	private startTimer() {
+		if (this.timerInterval !== null) {
+			return;
+		}
+
+		this.isPaused = false;
+
+		this.timerInterval = window.setInterval(() => {
+			this.seconds++;
+			this.updateDisplay();
+		}, 1000);
+
+		new Notice("Timer started");
+	}
+
+	private pauseTimer() {
+		if (this.timerInterval === null) {
+			return;
+		}
+
+		this.clearTimer();
+		this.isPaused = true;
+
+		new Notice("Timer paused");
+	}
+
+	private stopTimer() {
+		this.clearTimer();
+
+		this.seconds = 0;
+		this.isPaused = false;
+
+		this.updateDisplay();
+
+		new Notice("Timer stopped");
+	}
+
+	private clearTimer() {
+		if (this.timerInterval !== null) {
+			window.clearInterval(this.timerInterval);
+			this.timerInterval = null;
+		}
+	}
+
+	private updateDisplay() {
+		const minutes = Math.floor(this.seconds / 60);
+		const remainingSeconds = this.seconds % 60;
+
+		const formattedTime = `${minutes.toString().padStart(2, "0")}:${remainingSeconds
+			.toString()
+			.padStart(2, "0")}`;
+
+		this.statusText.setText(formattedTime);
 	}
 }
