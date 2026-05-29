@@ -4,8 +4,6 @@ const VIEW_TYPE_TIMER_BAR = "timer-bar-view";
 
 export default class TimerBarPlugin extends Plugin {
 	async onload() {
-		console.log("Timer Bar plugin loaded");
-
 		this.registerView(
 			VIEW_TYPE_TIMER_BAR,
 			(leaf) => new TimerBarView(leaf)
@@ -15,31 +13,26 @@ export default class TimerBarPlugin extends Plugin {
 			id: "open-timer-bar",
 			name: "Open timer bar",
 			callback: () => {
-				this.activateView();
+				void this.activateView();
 			},
 		});
 
 		this.addRibbonIcon("timer", "Open timer bar", () => {
-			this.activateView();
+			void this.activateView();
 		});
 
-		await this.activateView();
-	}
-
-	onunload() {
-		console.log("Timer Bar plugin unloaded");
+		void this.activateView();
 	}
 
 	async activateView() {
 		const existingLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_TIMER_BAR);
-
 		const existingLeaf = existingLeaves[0];
 
 		if (existingLeaf) {
-			this.app.workspace.revealLeaf(existingLeaf);
+			await this.app.workspace.revealLeaf(existingLeaf);
 			return;
 		}
-		
+
 		const leaf = this.app.workspace.getRightLeaf(false);
 
 		if (!leaf) {
@@ -52,7 +45,7 @@ export default class TimerBarPlugin extends Plugin {
 			active: true,
 		});
 
-		this.app.workspace.revealLeaf(leaf);
+		await this.app.workspace.revealLeaf(leaf);
 	}
 }
 
@@ -60,7 +53,6 @@ class TimerBarView extends ItemView {
 	private statusText!: HTMLElement;
 	private timerInterval: number | null = null;
 	private seconds = 0;
-	private isPaused = false;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -71,7 +63,7 @@ class TimerBarView extends ItemView {
 	}
 
 	getDisplayText() {
-		return "Timer Bar";
+		return "Timer bar";
 	}
 
 	getIcon() {
@@ -136,8 +128,6 @@ class TimerBarView extends ItemView {
 			return;
 		}
 
-		this.isPaused = false;
-
 		this.timerInterval = window.setInterval(() => {
 			this.seconds++;
 			this.updateDisplay();
@@ -152,7 +142,6 @@ class TimerBarView extends ItemView {
 		}
 
 		this.clearTimer();
-		this.isPaused = true;
 
 		new Notice("Timer paused");
 	}
@@ -161,8 +150,6 @@ class TimerBarView extends ItemView {
 		this.clearTimer();
 
 		this.seconds = 0;
-		this.isPaused = false;
-
 		this.updateDisplay();
 
 		new Notice("Timer stopped");
